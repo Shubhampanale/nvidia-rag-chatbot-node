@@ -106,8 +106,7 @@ export async function generateRAGResponse(
 
   // 3. Evaluate relevance against threshold (FAISS L2 distance — lower is better)
   const threshold = config.similarityThreshold;
-  const relevantResults = resultsWithScores.filter(([, score]) => score <= threshold);
-
+  const relevantResults = resultsWithScores.slice(0, 3);
   const nvidiaClient = new NvidiaClient();
 
   // ── Case 2: No Relevant Context → Fallback to LLM ────────────────────────

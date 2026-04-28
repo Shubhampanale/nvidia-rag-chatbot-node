@@ -10,7 +10,7 @@ export const config = {
   chunkOverlap: parseInt(process.env.CHUNK_OVERLAP || "200", 10),
   topKResults: parseInt(process.env.TOP_K_RESULTS || "5", 10),
   // FAISS L2 distance threshold (lower = more similar). Tune based on embeddings.
-  similarityThreshold: parseFloat(process.env.SIMILARITY_THRESHOLD || "1.0"),
+  similarityThreshold: parseFloat(process.env.SIMILARITY_THRESHOLD || "1.6"),
 
   // NVIDIA / Gemma model config
   llm: {
