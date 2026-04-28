@@ -41,9 +41,6 @@ export async function chatController(
 
     const response: ChatResponse = {
       answer,
-      sessionId: currentSessionId,
-      sources,
-      chunks,
     };
 
     res.status(200).json(response);

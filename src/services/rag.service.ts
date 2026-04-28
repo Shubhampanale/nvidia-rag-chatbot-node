@@ -3,7 +3,9 @@ import { config } from "../config/env";
 import { NvidiaClient } from "../utils/nvidia.client";
 import { loadGlobalVectorStore } from "./ingest.service";
 
-// ─── Prompts ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Prompts
+// ─────────────────────────────────────────────────────────────
 
 const SYSTEM_RAG_PROMPT = `You are a document assistant.
 
@@ -11,7 +13,7 @@ Rules:
 - Answer ONLY from the provided context
 - Keep the answer clear and well formatted
 - Use bullet points if helpful
-- If the answer is not in the context, say: "Not found in document."`;
+- If the answer is not in the context, say: "NOT_FOUND_IN_CONTEXT"`;
 
 export const fallbackPrompt = `
 MEDICO – AI COUNSELLOR (INDIA)
@@ -26,9 +28,6 @@ RULES:
 - Reply in user language (EN/HI/MR)
 - Always guide next step
 
-INTENT TYPES:
-Counselling, College info, Fees, Course compare, Documents, Exam, Drop/Take, Choice filling, Top colleges, Unclear, Off-topic, Prediction
-
 STRICT NO:
 - No cutoff prediction
 - No rank/marks estimation
@@ -38,25 +37,33 @@ IF PREDICTION ASKED:
 - Do NOT calculate
 - Redirect only: https://cutoffmantra.appristine.in/signin
 
-FORMAT:
-- Fees: Govt / Private / Deemed
-- Include bond, internship, hostel when needed
-- Choice filling: Dream / Safe / Backup
-
 BEHAVIOR:
 - Answer only main intent
 - Keep response practical
 - No long explanations
-- No guarantees
-
-OFF-TOPIC RULE (DYNAMIC):
-If user question is not related to medical admissions:
-- First, politely acknowledge the topic
-- Then clearly say it is this platform intented to the neet medical counselling help
-- Then smoothly redirect user back to medical counselling help
-- Tone must feel natural, not robotic
-- Never use same sentence twice
 `;
+
+export const greetingPrompt = `
+MEDICO – AI COUNSELLOR (INDIA)
+
+You are Medico, an AI Medical Admission Counsellor for CutoffMantra.
+
+When user greets (hi, hello, hey):
+- Respond warmly and briefly
+- Introduce yourself in 1 line
+- Mention you help with MBBS & Allied Health admissions in India
+- Ask what guidance they need (counselling, college, fees, choice filling)
+
+RULES:
+- Keep it very short (2–4 lines max)
+- No long explanation
+- No cutoff prediction or numbers
+- Be friendly and student-focused
+`;
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
 
 function buildCleanContext(docs: RAGContext[]): string {
   return docs
@@ -66,6 +73,7 @@ function buildCleanContext(docs: RAGContext[]): string {
         .replace(/\s+/g, " ")
         .replace(/[^\x20-\x7E]/g, "")
         .trim();
+
       return `[${i + 1}] (p.${page}) ${text}`;
     })
     .filter((chunk) => chunk.length > 20)
@@ -83,54 +91,14 @@ function extractSources(docs: RAGContext[]): string[] {
   ];
 }
 
-// ─── Main export ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Model Calls (Separated)
+// ─────────────────────────────────────────────────────────────
 
-export async function generateRAGResponse(
-  question: string,
-  documentId?: string
-): Promise<{ answer: string; sources: string[]; chunks: string }> {
+async function callRagModel(question: string, context: string) {
+  const client = new NvidiaClient();
 
-  // 1. Load global store
-  const vectorStore = await loadGlobalVectorStore("query");
-
-  // 2. Retrieve with similarity scores
-  const k = documentId ? 10 : 3;
-  let resultsWithScores = await vectorStore.similaritySearchWithScore(question, k);
-
-  if (documentId) {
-    resultsWithScores = resultsWithScores.filter(
-      ([doc]) => doc.metadata?.documentId === documentId
-    );
-    resultsWithScores = resultsWithScores.slice(0, 3);
-  }
-
-  // 3. Evaluate relevance against threshold (FAISS L2 distance — lower is better)
-  const threshold = config.similarityThreshold;
-  const relevantResults = resultsWithScores.slice(0, 3);
-  const nvidiaClient = new NvidiaClient();
-
-  // ── Case 2: No Relevant Context → Fallback to LLM ────────────────────────
-  if (relevantResults.length === 0) {
-    console.log(`[RAG] No relevant context (best score > ${threshold}). Falling back to LLM.`);
-
-    const answer = await nvidiaClient.chat({
-      messages: [{ role: "user", content: question }],
-      systemPrompt: fallbackPrompt,
-    });
-
-    return {
-      answer: answer.trim(),
-      sources: [],
-      chunks: "",
-    };
-  }
-
-  // ── Case 1: Relevant Context Found → RAG Flow ────────────────────────────
-  const relevantDocs = relevantResults.map(([doc]) => doc);
-  const context = buildCleanContext(relevantDocs as RAGContext[]);
-  const sources = extractSources(relevantDocs as RAGContext[]);
-
-  const answer = await nvidiaClient.chat({
+  const res = await client.chat({
     messages: [
       {
         role: "user",
@@ -140,10 +108,113 @@ export async function generateRAGResponse(
     systemPrompt: SYSTEM_RAG_PROMPT,
   });
 
+  return res.trim();
+}
+
+async function callFallbackModel(question: string) {
+  const client = new NvidiaClient();
+
+  const res = await client.chat({
+    messages: [{ role: "user", content: question }],
+    systemPrompt: fallbackPrompt,
+  });
+
+  return res.trim();
+}
+
+async function callGreetingsModel(question: string) {
+  const client = new NvidiaClient();
+
+  const res = await client.chat({
+    messages: [{ role: "user", content: question }],
+    systemPrompt: greetingPrompt,
+  });
+
+  return res.trim();
+}
+
+function isLowIntentQuery(query: string): boolean {
+  const q = query.toLowerCase().trim();
+
+  const greetings = [
+    "hi", "hello", "hey", "good morning", "good evening"
+  ];
+
+  return greetings.includes(q) || q.length < 4;
+}
+// ─────────────────────────────────────────────────────────────
+// Main Controller
+// ─────────────────────────────────────────────────────────────
+
+export async function generateRAGResponse(
+  question: string,
+  documentId?: string
+): Promise<{ answer: string; sources: string[]; chunks: string }> {
+
+  if (isLowIntentQuery(question)) {
+    const answer = await callGreetingsModel(question);
+
+    return {
+      answer,
+      sources: [],
+      chunks: "",
+    };
+  }
+
+  // 1. Load vector store
+  const vectorStore = await loadGlobalVectorStore("query");
+
+  const k = documentId ? 10 : 3;
+
+  let resultsWithScores = await vectorStore.similaritySearchWithScore(
+    question,
+    k
+  );
+
+  // 2. Filter by document if needed
+  if (documentId) {
+    resultsWithScores = resultsWithScores
+      .filter(([doc]) => doc.metadata?.documentId === documentId)
+      .slice(0, 3);
+  }
+
+  const topResults = resultsWithScores.slice(0, 3);
+  console.log("topResults::", topResults)
+  const docs = topResults.map(([doc]) => doc);
+  console.log("docs::", docs)
+  const bestScore = topResults[0]?.[1];
+
+  // ❌ No relevant context → fallback directly
+  if (!bestScore || bestScore > 1.6) {
+    const answer = await callFallbackModel(question);
+
+    return {
+      answer,
+      sources: [],
+      chunks: "",
+    };
+  }
+
+  const context = buildCleanContext(docs);
+  const sources = extractSources(docs);
+
+  // 🧠 Try RAG model
+  const ragAnswer = await callRagModel(question, context);
+
+  // ❌ If RAG says context is not enough → fallback
+  if (ragAnswer.includes("NOT_FOUND_IN_CONTEXT")) {
+    const answer = await callFallbackModel(question);
+
+    return {
+      answer,
+      sources: [],
+      chunks: "",
+    };
+  }
+
   return {
-    answer: answer.trim(),
+    answer: ragAnswer,
     sources,
     chunks: context,
   };
 }
-

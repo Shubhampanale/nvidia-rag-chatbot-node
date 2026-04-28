@@ -24,9 +24,6 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   answer: string;
-  sessionId: string;
-  sources: string[];
-  chunks?: string;
 }
 
 export interface RAGContext {
