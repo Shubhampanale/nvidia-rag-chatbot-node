@@ -1,0 +1,26 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+export const config = {
+  port: parseInt(process.env.PORT || "3000", 10),
+  nvidiaApiKey: process.env.NVIDIA_API_KEY || "",
+  uploadDir: process.env.UPLOAD_DIR || "./uploads",
+  vectorStoreDir: process.env.VECTOR_STORE_DIR || "./vector_store",
+  chunkSize: parseInt(process.env.CHUNK_SIZE || "1000", 10),
+  chunkOverlap: parseInt(process.env.CHUNK_OVERLAP || "200", 10),
+  topKResults: parseInt(process.env.TOP_K_RESULTS || "5", 10),
+
+  // NVIDIA / Gemma model config
+  llm: {
+    model: "google/gemma-2-2b-it",
+    baseURL: "https://integrate.api.nvidia.com/v1",
+    temperature: 0.2,
+    maxTokens: 256,
+  },
+
+  // Embeddings — NVIDIA provides this compatible model
+  embeddings: {
+    model: "nvidia/nv-embedqa-e5-v5",
+    baseURL: "https://integrate.api.nvidia.com/v1",
+  },
+} as const;

@@ -1,0 +1,38 @@
+import express from "express";
+import cors from "cors";
+import fs from "fs";
+import { config } from "./config/env";
+import ingestRoutes from "./routes/ingest.routes";
+import chatRoutes from "./routes/chat.routes";
+import { errorMiddleware } from "./middleware/error.middleware";
+
+const app = express();
+
+// Ensure directories exist
+fs.mkdirSync(config.uploadDir, { recursive: true });
+fs.mkdirSync(config.vectorStoreDir, { recursive: true });
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", model: config.llm.model });
+});
+
+// Routes
+app.use("/api/ingest", ingestRoutes);
+app.use("/api/chat", chatRoutes);
+
+// Error handler (must be last)
+app.use(errorMiddleware);
+
+app.listen(config.port, () => {
+  console.log(`🚀 Server running on http://localhost:${config.port}`);
+  console.log(`🤖 Model: ${config.llm.model}`);
+  console.log(`🔗 Base URL: ${config.llm.baseURL}`);
+});
+
+export default app;
