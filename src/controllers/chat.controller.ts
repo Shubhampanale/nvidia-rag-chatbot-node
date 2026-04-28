@@ -17,10 +17,6 @@ export async function chatController(
     res.status(400).json({ success: false, error: "Question is required" });
     return;
   }
-  if (!documentId) {
-    res.status(400).json({ success: false, error: "documentId is required" });
-    return;
-  }
 
   // Get or create session
   const currentSessionId = sessionId || uuidv4();
@@ -68,3 +64,4 @@ export function getChatHistory(
   }
   res.status(200).json({ history: session.history });
 }
+

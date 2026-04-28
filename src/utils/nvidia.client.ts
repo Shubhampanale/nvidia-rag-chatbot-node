@@ -15,8 +15,9 @@ export class NvidiaClient {
     model?: string;
     temperature?: number;
     maxTokens?: number;
+    systemPrompt?: string;
   }) {
-    const systemPrompt = `
+    const defaultSystemPrompt = `
       You are Medico, an AI Medical Admission Counsellor for CutoffMantra.
       Your responses should be structured, concise, and relevant to the medical admissions process in India.
       Always maintain a natural tone, guiding the user towards the next step.
@@ -26,7 +27,9 @@ export class NvidiaClient {
 
       **Respond in a way that is student-friendly and professional. Avoid promotional tone.**
     `;
-    
+
+    const systemPrompt = params.systemPrompt ?? defaultSystemPrompt;
+
     // Add system prompt to the first user message (if needed), then append the user's messages
     const messagesWithSystemPrompt = [
       { role: 'assistant', content: systemPrompt }, // Use assistant as a workaround for system role

@@ -3,8 +3,11 @@ import path from "path";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
+import { Document } from "@langchain/core/documents";
 import { createEmbeddings } from "./embeddings.service";
 import { config } from "../config/env";
+
+export const GLOBAL_STORE_NAME = "global";
 
 export async function ingestPDF(
   filePath: string,
@@ -37,33 +40,52 @@ export async function ingestPDF(
     doc.metadata.pageNumber = doc.metadata.loc?.pageNumber ?? "unknown";
   });
 
-  // 4. Embed with "passage" type and store in FAISS
+  // 4. Embed with "passage" type and store in GLOBAL FAISS store
   const embeddings = createEmbeddings("passage");
 
-  const storePath = path.join(config.vectorStoreDir, documentId);
-  fs.mkdirSync(storePath, { recursive: true });
+  const globalStorePath = path.join(config.vectorStoreDir, GLOBAL_STORE_NAME);
+  fs.mkdirSync(globalStorePath, { recursive: true });
 
-  console.log(`[INGEST] Embedding ${docs.length} chunks with NVIDIA passage embeddings...`);
-  const vectorStore = await FaissStore.fromDocuments(docs, embeddings);
-  await vectorStore.save(storePath);
+  let vectorStore: FaissStore;
 
-  console.log(`[INGEST] Vector store saved to ${storePath}`);
+  if (fs.existsSync(path.join(globalStorePath, "docstore.json"))) {
+    // Load existing global store and add new documents
+    console.log(`[INGEST] Loading existing global store...`);
+    vectorStore = await FaissStore.load(globalStorePath, embeddings);
+    await vectorStore.addDocuments(docs);
+  } else {
+    // Create new global store
+    console.log(`[INGEST] Creating new global store...`);
+    vectorStore = await FaissStore.fromDocuments(docs, embeddings);
+  }
+
+  await vectorStore.save(globalStorePath);
+
+  console.log(`[INGEST] Global vector store saved to ${globalStorePath} (${docs.length} new chunks)`);
   return docs.length;
 }
 
-export async function loadVectorStore(
-  documentId: string,
+export async function loadGlobalVectorStore(
   inputType: "passage" | "query" = "query"
 ): Promise<FaissStore> {
-  const storePath = path.join(config.vectorStoreDir, documentId);
+  const globalStorePath = path.join(config.vectorStoreDir, GLOBAL_STORE_NAME);
 
-  if (!fs.existsSync(storePath)) {
-    throw new Error(`Vector store not found for documentId: ${documentId}`);
+  if (!fs.existsSync(path.join(globalStorePath, "docstore.json"))) {
+    throw new Error(`Global vector store not found at ${globalStorePath}. Please ingest documents first.`);
   }
 
   const embeddings = createEmbeddings(inputType);
-  const vectorStore = await FaissStore.load(storePath, embeddings);
+  const vectorStore = await FaissStore.load(globalStorePath, embeddings);
 
-  console.log(`[INGEST] Loaded vector store for documentId: ${documentId} with input_type="${inputType}"`);
+  console.log(`[INGEST] Loaded global vector store with input_type="${inputType}"`);
   return vectorStore;
 }
+
+// Backwards-compatible wrapper (optional, can be removed later)
+export async function loadVectorStore(
+  _documentId: string,
+  inputType: "passage" | "query" = "query"
+): Promise<FaissStore> {
+  return loadGlobalVectorStore(inputType);
+}
+

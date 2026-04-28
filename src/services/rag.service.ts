@@ -1,43 +1,75 @@
-import { StringOutputParser } from "@langchain/core/output_parsers";
-import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
-import { createLLM } from "./llm.service";
-import { loadVectorStore } from "./ingest.service";
-import { ChatMessage, RAGContext } from "../types";
+import { RAGContext } from "../types";
+import { config } from "../config/env";
 import { NvidiaClient } from "../utils/nvidia.client";
+import { loadGlobalVectorStore } from "./ingest.service";
 
 // ─── Prompts ────────────────────────────────────────────────────────────────
 
-// Stage 1: Just clean + summarize the raw chunks — NO LLM, pure text processing
-function buildCleanContext(docs: RAGContext[]): string {
-  return docs
-    .map((doc, i) => {
-      const page = doc.metadata?.pageNumber ?? "?";
-      const text = doc.pageContent
-        .replace(/\s+/g, " ")        // collapse whitespace
-        .replace(/[^\x20-\x7E]/g, "") // strip non-ASCII garbage from PDF parse
-        .trim();
-      return `[${i + 1}] (p.${page}) ${text}`;
-    })
-    .filter((chunk) => chunk.length > 20) // drop empty/junk chunks
-    .join("\n");
-}
-
-// Stage 2: Minimal system prompt — only what Gemma needs, nothing extra
-const SYSTEM_PROMPT = `You are a document assistant. Answer using ONLY the context provided. If unsure, say "Not found in document."`;
-const SYSTEM_RAG_FORMAT_PROMPT = `
-You are a document assistant.
+const SYSTEM_RAG_PROMPT = `You are a document assistant.
 
 Rules:
 - Answer ONLY from the provided context
 - Keep the answer clear and well formatted
 - Use bullet points if helpful
-- If the answer is not in the context, say: "Not found in document."
+- If the answer is not in the context, say: "Not found in document."`;
+
+export const fallbackPrompt = `
+MEDICO – AI COUNSELLOR (INDIA)
+
+Role: Medical Admission Counsellor (CutoffMantra)
+Scope: India MBBS & Allied Health only
+Link: https://cutoffmantra.appristine.in/signin
+
+RULES:
+- Be short, simple, structured
+- No greetings or repeated intro
+- Reply in user language (EN/HI/MR)
+- Always guide next step
+
+INTENT TYPES:
+Counselling, College info, Fees, Course compare, Documents, Exam, Drop/Take, Choice filling, Top colleges, Unclear, Off-topic, Prediction
+
+STRICT NO:
+- No cutoff prediction
+- No rank/marks estimation
+- No seat probability or trends
+
+IF PREDICTION ASKED:
+- Do NOT calculate
+- Redirect only: https://cutoffmantra.appristine.in/signin
+
+FORMAT:
+- Fees: Govt / Private / Deemed
+- Include bond, internship, hostel when needed
+- Choice filling: Dream / Safe / Backup
+
+BEHAVIOR:
+- Answer only main intent
+- Keep response practical
+- No long explanations
+- No guarantees
+
+OFF-TOPIC RULE (DYNAMIC):
+If user question is not related to medical admissions:
+- First, politely acknowledge the topic
+- Then clearly say it is this platform intented to the neet medical counselling help
+- Then smoothly redirect user back to medical counselling help
+- Tone must feel natural, not robotic
+- Never use same sentence twice
 `;
-function formatHistory(history: ChatMessage[]) {
-  return history.slice(-4).map((m) =>  // max 2 turns to save tokens
-    m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content)
-  );
+
+function buildCleanContext(docs: RAGContext[]): string {
+  return docs
+    .map((doc, i) => {
+      const page = doc.metadata?.pageNumber ?? "?";
+      const text = doc.pageContent
+        .replace(/\s+/g, " ")
+        .replace(/[^\x20-\x7E]/g, "")
+        .trim();
+      return `[${i + 1}] (p.${page}) ${text}`;
+    })
+    .filter((chunk) => chunk.length > 20)
+    .join("\n");
 }
 
 function extractSources(docs: RAGContext[]): string[] {
@@ -55,43 +87,49 @@ function extractSources(docs: RAGContext[]): string[] {
 
 export async function generateRAGResponse(
   question: string,
-  documentId: string
+  documentId?: string
 ): Promise<{ answer: string; sources: string[]; chunks: string }> {
 
-  // 1. Retrieve
-  const vectorStore = await loadVectorStore(documentId, "query");
-  const retriever = vectorStore.asRetriever({ k: 3 });
-  const relevantDocs = await retriever.invoke(question);
+  // 1. Load global store
+  const vectorStore = await loadGlobalVectorStore("query");
 
-  if (!relevantDocs.length) {
+  // 2. Retrieve with similarity scores
+  const k = documentId ? 10 : 3;
+  let resultsWithScores = await vectorStore.similaritySearchWithScore(question, k);
+
+  if (documentId) {
+    resultsWithScores = resultsWithScores.filter(
+      ([doc]) => doc.metadata?.documentId === documentId
+    );
+    resultsWithScores = resultsWithScores.slice(0, 3);
+  }
+
+  // 3. Evaluate relevance against threshold (FAISS L2 distance — lower is better)
+  const threshold = config.similarityThreshold;
+  const relevantResults = resultsWithScores.filter(([, score]) => score <= threshold);
+
+  const nvidiaClient = new NvidiaClient();
+
+  // ── Case 2: No Relevant Context → Fallback to LLM ────────────────────────
+  if (relevantResults.length === 0) {
+    console.log(`[RAG] No relevant context (best score > ${threshold}). Falling back to LLM.`);
+
+    const answer = await nvidiaClient.chat({
+      messages: [{ role: "user", content: question }],
+      systemPrompt: fallbackPrompt,
+    });
+
     return {
-      answer: "No relevant content found in the document.",
+      answer: answer.trim(),
       sources: [],
       chunks: "",
     };
   }
 
-  // 2. Clean context
+  // ── Case 1: Relevant Context Found → RAG Flow ────────────────────────────
+  const relevantDocs = relevantResults.map(([doc]) => doc);
   const context = buildCleanContext(relevantDocs as RAGContext[]);
   const sources = extractSources(relevantDocs as RAGContext[]);
-
-  console.log("context::", context)
-
-  // 3. Minimal prompt (ONLY system + human)
-  const prompt = ChatPromptTemplate.fromMessages([
-    ["system", SYSTEM_RAG_FORMAT_PROMPT],
-    ["human", `Context:\n${context}\n\nQuestion: ${question}`],
-  ]);
-
-  const llm = createLLM();
-  const chain = prompt.pipe(llm).pipe(new StringOutputParser());
-
-  // 4. Call LLM
-  //using langchain invoke model
-  // const answer = await chain.invoke({});
-
-  //using nvidia cliend invoke model
-  const nvidiaClient = new NvidiaClient();
 
   const answer = await nvidiaClient.chat({
     messages: [
@@ -100,6 +138,7 @@ export async function generateRAGResponse(
         content: `Context:\n${context}\n\nQuestion: ${question}`,
       },
     ],
+    systemPrompt: SYSTEM_RAG_PROMPT,
   });
 
   return {
@@ -108,3 +147,4 @@ export async function generateRAGResponse(
     chunks: context,
   };
 }
+
