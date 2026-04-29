@@ -2,16 +2,13 @@ import OpenAI from 'openai';
 import { config } from "../config/env";
 import type { ChatClient, ChatParams } from "./ai.client";
 
-const FALLBACK_NVIDIA_API_KEY =
-  "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";
 
 export class NvidiaClient implements ChatClient {
   private client: OpenAI;
 
   constructor() {
     this.client = new OpenAI({
-      // Preserve current behavior: if NVIDIA_API_KEY is not set, fallback to the existing hardcoded key.
-      apiKey: config.nvidiaApiKey || FALLBACK_NVIDIA_API_KEY,
+      apiKey: config.nvidiaApiKey,
       baseURL: config.llm.baseURL || "https://integrate.api.nvidia.com/v1",
     });
   }
@@ -32,7 +29,7 @@ export class NvidiaClient implements ChatClient {
 
     // Add system prompt to the first user message (if needed), then append the user's messages
     const messagesWithSystemPrompt = [
-      { role: 'assistant', content: systemPrompt }, // Use assistant as a workaround for system role
+      { role: 'assistant', content: systemPrompt },
       ...params.messages,
     ];
 
