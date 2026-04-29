@@ -15,6 +15,7 @@ export type ChatParams = {
 
 export interface ChatClient {
   chat(params: ChatParams): Promise<string>;
+  stream?(params: ChatParams): AsyncIterable<string>;
 }
 
 export function getChatClient(): ChatClient {
