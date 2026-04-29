@@ -16,6 +16,7 @@ export class NvidiaClient {
     temperature?: number;
     maxTokens?: number;
     systemPrompt?: string;
+    tools?: any[]
   }) {
     const defaultSystemPrompt = `
       You are Medico, an AI Medical Admission Counsellor for CutoffMantra.
@@ -43,6 +44,7 @@ export class NvidiaClient {
       temperature: params.temperature || 0.2,
       max_tokens: params.maxTokens || 1024,
       stream: false,
+      tools: params.tools
     });
 
     return completion.choices[0]?.message?.content || '';

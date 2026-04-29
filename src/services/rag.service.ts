@@ -10,23 +10,22 @@ import { loadGlobalVectorStore } from "./ingest.service";
 const SYSTEM_RAG_PROMPT = `You are a document assistant for MEDICO — an AI Medical Admission Counsellor for CutoffMantra (India).
 
 LANGUAGE RULE:
-- Detect the user's language automatically (English / Hindi / Marathi)
-- Always reply in the same language the user wrote in
-- Never switch languages mid-response
+- **CRITICAL**: Detect the language of the user's question (English, Hindi, or Marathi).
+- You MUST respond entirely in the same language used by the user.
+- If the user asks in Hindi, respond in Hindi. If in Marathi, respond in Marathi.
+- Do not switch languages or use English if the user asked in a regional language.
 
-ANSWERING RULES:
-- Answer ONLY from the provided context
-- Keep answers clear, short, and well-formatted
-- Use bullet points when listing steps or documents
-- If the answer is partially in context, give what you know and add:
-  "For complete details, visit: https://cutoffmantra.appristine.in/signin"
+ANSWERING RULES (STRICT):
+- You MUST ONLY answer if the context explicitly contains the answer.
+- DO NOT infer, assume, or generalize from partial context.
+- If the context does not explicitly mention the exact topic (fees, refund, quota rules, colleges, cutoff, admission, application process), you MUST output:
+NOT_FOUND_IN_CONTEXT
+- Even if context is partially related, do NOT answer unless refund/fee policy is clearly stated.
 
 WHEN ANSWER IS NOT IN CONTEXT:
-- Do NOT say "platform restriction" or refuse
-- Instead say:
-  EN: "I don't have full details on this right now. For accurate guidance, please visit: https://cutoffmantra.appristine.in/signin or ask our counsellor."
-  HI: "मुझे अभी इसकी पूरी जानकारी नहीं है। सही मार्गदर्शन के लिए यहाँ जाएं: https://cutoffmantra.appristine.in/signin"
-  MR: "मला आत्ता याची पूर्ण माहिती नाही. अचूक मार्गदर्शनासाठी येथे भेट द्या: https://cutoffmantra.appristine.in/signin"
+Return this single token on its own line with zero other characters:
+NOT_FOUND_IN_CONTEXT
+If you write anything else — in any language — you have failed the instruction.
 
 IF CONTEXT HAS CONFLICTING INFORMATION:
 - Do not pick one answer and guess
@@ -34,7 +33,6 @@ IF CONTEXT HAS CONFLICTING INFORMATION:
 
 NEVER:
 - Give a flat refusal for any admission-related topic
-- Say "I cannot answer this" without providing a redirect link
 - Predict cutoffs, ranks, or selection chances`;
 
 export const fallbackPrompt = `
@@ -43,6 +41,7 @@ You are MEDICO, an AI Medical Admission Counsellor for CutoffMantra (India).
 ━━━━━━━━━━━━━━━━━━━━━━
 🎯 CORE PURPOSE
 ━━━━━━━━━━━━━━━━━━━━━━
+
 You ONLY help with medical admission guidance in India:
 - NEET UG / PG counselling
 - MBBS / BDS / Allied health admissions
@@ -55,13 +54,15 @@ You ONLY help with medical admission guidance in India:
 ━━━━━━━━━━━━━━━━━━━━━━
 🗣 LANGUAGE RULE (IMPORTANT)
 ━━━━━━━━━━━━━━━━━━━━━━
-You MUST respond in the user’s language:
-- English / Hindi / Marathi
+LANGUAGE RULE:
+- **CRITICAL**: Detect the language of the user's question (English, Hindi, or Marathi).
+- You MUST respond entirely in the same language used by the user.
+- If the user asks in Hindi, respond in Hindi. If in Marathi, respond in Marathi.
+- Do not switch languages or use English if the user asked in a regional language.
 
 If user is from Maharashtra or uses Hindi/Marathi:
 👉 Always allow and encourage:
 "You can ask in Hindi या मराठी."
-
 ━━━━━━━━━━━━━━━━━━━━━━
 🚨 CRITICAL INTENT SEPARATION RULES
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -181,8 +182,11 @@ DO NOT:
 If knowledge is missing:
 - Do NOT refuse
 - Do NOT block
-- Say:
+- Say (in the user's language):
   "I may not have complete updated data. Please verify with official MCC/state counselling portal or CutoffMantra."
+
+Always include this link at the end of your response if you are providing general guidance:
+For complete details, visit: https://cutoffmantra.appristine.in/signin
 
 Then continue helpful guidance.
 
@@ -200,8 +204,15 @@ MEDICO – AI COUNSELLOR (INDIA)
 
 You are Medico, an AI Medical Admission Counsellor for CutoffMantra.
 
+LANGUAGE RULE:
+- **CRITICAL**: Detect the language of the user's question (English, Hindi, or Marathi).
+- You MUST respond entirely in the same language used by the user.
+- If the user asks in Hindi, respond in Hindi. If in Marathi, respond in Marathi.
+- Do not switch languages or use English if the user asked in a regional language.
+
 When user greets (hi, hello, hey):
 - Respond warmly and briefly
+- DETECT LANGUAGE: If greeted in Hindi (नमस्ते), reply in Hindi. If in Marathi (नमस्कार), reply in Marathi.
 - Introduce yourself in 1 line
 - Mention you help with MBBS & Allied Health admissions in India
 - Ask what guidance they need (counselling, college, fees, choice filling)
@@ -220,13 +231,13 @@ RULES:
 function buildCleanContext(docs: RAGContext[]): string {
   return docs
     .map((doc, i) => {
-      const page = doc.metadata?.pageNumber ?? "?";
+      const page = doc.metadata?.pageNumber ?? 1;
       const text = doc.pageContent
-        .replace(/\s+/g, " ")
-        .replace(/[^\x20-\x7E]/g, "")
+        .replace(/\s+/g, ' ')
         .trim();
 
-      return `[${i + 1}] (p.${page}) ${text}`;
+      const limitedText = text.length > 800 ? text.slice(0, 800) + '...' : text;
+      return `[${i + 1}] (p.${page}) ${limitedText}`;
     })
     .filter((chunk) => chunk.length > 20)
     .join("\n");
@@ -297,6 +308,44 @@ function isLowIntentQuery(query: string): boolean {
 
   return greetings.includes(q) || q.length < 4;
 }
+
+const NOT_FOUND_TOKEN = "NOT_FOUND_IN_CONTEXT";
+const SIGNIN_URL = "https://cutoffmantra.appristine.in/signin";
+
+function stripRedirectLines(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !line.includes(SIGNIN_URL))
+    .filter((line) => !/for complete details/i.test(line))
+    .join("\n")
+    .trim();
+}
+
+function looksLikeRefusal(text: string): boolean {
+  return [
+    /(?:^|\b)(?:sorry|apolog(?:y|ise|ize)?|cannot|can't|unable|don'?t know|no idea)(?:\b|$)/i,
+    /(?:^|\b)(?:refuse|won't|can not help)(?:\b|$)/i,
+    /(मला माफ करा|क्षम(?:ा)? करा|माफ करा|माफ़(?:\s)?कर(?:े|ना)|क्षमा करें)/i,
+    /(मी .*?(?:स्पष्टीकरण|माहिती).*(?:देऊ शकत नाही|देऊ शकत नाहीये)|मी याबद्दल.*?(?:काही )?(?:सांगू|बोलू|समजावू) शकत नाही)/i,
+    /(मैं .*?(?:नहीं बता सकता|नहीं बता सकती|समझा नहीं सकता|मदद नहीं कर सकता))/i,
+  ].some((re) => re.test(text));
+}
+
+function shouldFallbackFromRagAnswer(answer: string): boolean {
+  const trimmed = (answer ?? "").trim();
+  if (!trimmed) return true;
+  if (trimmed === NOT_FOUND_TOKEN) return true;
+  if (trimmed.includes(NOT_FOUND_TOKEN)) return true;
+
+  const withoutRedirect = stripRedirectLines(trimmed);
+  if (!withoutRedirect) return true; // only redirect link / boilerplate
+
+  // If model slips into a refusal instead of emitting NOT_FOUND_IN_CONTEXT,
+  // force fallback so user still gets a helpful answer.
+  if (looksLikeRefusal(withoutRedirect) && withoutRedirect.length < 300) return true;
+
+  return false;
+}
 // ─────────────────────────────────────────────────────────────
 // Main Controller
 // ─────────────────────────────────────────────────────────────
@@ -320,7 +369,7 @@ export async function generateRAGResponse(
   // 1. Load vector store
   const vectorStore = await loadGlobalVectorStore("query");
 
-  const k = documentId ? 10 : 3;
+  const k = documentId ? 10 : 5;
 
   let resultsWithScores = await vectorStore.similaritySearchWithScore(
     question,
@@ -339,29 +388,28 @@ export async function generateRAGResponse(
   const bestScore = topResults[0]?.[1];
 
   // ❌ No relevant context → fallback directly
-  if (!bestScore || bestScore > 1.6) {
+  if (!bestScore || bestScore > config.similarityThreshold) {
+    console.log(`Retrieval score too low: ${bestScore} > ${config.similarityThreshold}`);
     const answer = await callFallbackModel(question);
 
     return {
       answer,
-      sources: [],
+      sources: ['General eligibility rules'],
       chunks: "",
     };
   }
 
+  console.log(`Retrieved ${docs.length} chunks, best score: ${bestScore}`);
   const context = buildCleanContext(docs);
   const sources = extractSources(docs);
-
-  // 🧠 Try RAG model
   const ragAnswer = await callRagModel(question, context);
 
-  // ❌ If RAG says context is not enough → fallback
-  if (ragAnswer.includes("NOT_FOUND_IN_CONTEXT")) {
+  if (shouldFallbackFromRagAnswer(ragAnswer)) {
     const answer = await callFallbackModel(question);
 
     return {
       answer,
-      sources: [],
+      sources: ['General eligibility rules'],
       chunks: "",
     };
   }
