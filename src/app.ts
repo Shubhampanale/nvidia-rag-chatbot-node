@@ -3,6 +3,7 @@ import cors from "cors";
 import fs from "fs";
 import { config } from "./config/env";
 import ingestRoutes from "./routes/ingest.routes";
+import ingestExcelRoutes from "./routes/ingestExcel.routes";
 import chatRoutes from "./routes/chat.routes";
 import { errorMiddleware } from "./middleware/error.middleware";
 
@@ -27,6 +28,7 @@ app.get("/health", (_req, res) => {
 
 // Routes
 app.use("/api/ingest", ingestRoutes);
+app.use("/api/ingest-excel", ingestExcelRoutes);
 app.use("/api/chat", chatRoutes);
 
 // Error handler (must be last)
