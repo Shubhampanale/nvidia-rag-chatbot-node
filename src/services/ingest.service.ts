@@ -1,11 +1,10 @@
 import fs from "fs";
 import path from "path";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
-import { Document } from "@langchain/core/documents";
 import { createEmbeddings } from "./embeddings.service";
 import { config } from "../config/env";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
 export const GLOBAL_STORE_NAME = "global";
 

@@ -1,6 +1,6 @@
 import { RAGContext } from "../types";
 import { config } from "../config/env";
-import { NvidiaClient } from "../utils/nvidia.client";
+import { getChatClient } from "../utils/ai.client";
 import { loadGlobalVectorStore } from "./ingest.service";
 
 // ─────────────────────────────────────────────────────────────
@@ -260,7 +260,7 @@ function extractSources(docs: RAGContext[]): string[] {
 
 async function callRagModel(question: string, context: string) {
   console.log("calling rag modal...")
-  const client = new NvidiaClient();
+  const client = getChatClient();
 
   const res = await client.chat({
     messages: [
@@ -277,7 +277,7 @@ async function callRagModel(question: string, context: string) {
 
 async function callFallbackModel(question: string) {
   console.log("calling fallback modal...")
-  const client = new NvidiaClient();
+  const client = getChatClient();
 
   const res = await client.chat({
     messages: [{ role: "user", content: question }],
@@ -289,7 +289,7 @@ async function callFallbackModel(question: string) {
 
 async function callGreetingsModel(question: string) {
   console.log("calling greetings modal...")
-  const client = new NvidiaClient();
+  const client = getChatClient();
 
   const res = await client.chat({
     messages: [{ role: "user", content: question }],

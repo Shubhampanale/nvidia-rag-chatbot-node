@@ -33,7 +33,6 @@ export async function ingestPDFController(
   } catch (err) {
     next(err);
   } finally {
-    // Clean up temp upload
-    fs.unlink(filePath, () => {});
+    fs.unlink(filePath, () => { });
   }
 }

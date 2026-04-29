@@ -1,23 +1,22 @@
 import OpenAI from 'openai';
+import { config } from "../config/env";
+import type { ChatClient, ChatParams } from "./ai.client";
 
-export class NvidiaClient {
+const FALLBACK_NVIDIA_API_KEY =
+  "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";
+
+export class NvidiaClient implements ChatClient {
   private client: OpenAI;
 
   constructor() {
     this.client = new OpenAI({
-      apiKey: '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',
-      baseURL: 'https://integrate.api.nvidia.com/v1',
+      // Preserve current behavior: if NVIDIA_API_KEY is not set, fallback to the existing hardcoded key.
+      apiKey: config.nvidiaApiKey || FALLBACK_NVIDIA_API_KEY,
+      baseURL: config.llm.baseURL || "https://integrate.api.nvidia.com/v1",
     });
   }
 
-  async chat(params: {
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-    systemPrompt?: string;
-    tools?: any[]
-  }) {
+  async chat(params: ChatParams) {
     const defaultSystemPrompt = `
       You are Medico, an AI Medical Admission Counsellor for CutoffMantra.
       Your responses should be structured, concise, and relevant to the medical admissions process in India.
@@ -38,7 +37,7 @@ export class NvidiaClient {
     ];
 
     const completion = await this.client.chat.completions.create({
-      model: params.model || 'google/gemma-2-2b-it',
+      model: params.model || config.llm.model || 'google/gemma-2-2b-it',
       //@ts-ignore
       messages: messagesWithSystemPrompt,
       temperature: params.temperature || 0.2,

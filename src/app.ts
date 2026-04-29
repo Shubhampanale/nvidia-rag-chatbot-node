@@ -22,7 +22,7 @@ app.use(express.static("public"));
 
 // Health check
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", model: config.llm.model });
+  res.json({ status: "ok" });
 });
 
 // Routes
@@ -33,9 +33,7 @@ app.use("/api/chat", chatRoutes);
 app.use(errorMiddleware);
 
 app.listen(config.port, () => {
-  console.log(`🚀 Server running on http://localhost:${config.port}`);
-  console.log(`🤖 Model: ${config.llm.model}`);
-  console.log(`🔗 Base URL: ${config.llm.baseURL}`);
+  console.log(`🚀 Server running on ${config.port}`);
 });
 
 export default app;
