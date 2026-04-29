@@ -31,4 +31,7 @@ export function getChatClient(): ChatClient {
     }
   }
 }
+export function getNvidiaClient(): ChatClient {
+  return new NvidiaClient();
+}
 

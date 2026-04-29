@@ -1,6 +1,6 @@
 import { RAGContext } from "../types";
 import { config } from "../config/env";
-import { getChatClient } from "../utils/ai.client";
+import { getChatClient, getNvidiaClient } from "../utils/ai.client";
 import { loadGlobalVectorStore } from "./ingest.service";
 
 // ─────────────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ You are Medico, an AI Medical Admission Counsellor for CutoffMantra.
 LANGUAGE RULE:
 - **CRITICAL**: Detect the language of the user's question (English, Hindi, or Marathi).
 - You MUST respond entirely in the same language used by the user.
-- If the user asks in Hindi, respond in Hindi. If in Marathi, respond in Marathi.
+- If the user asks in Hindi, respond in Hindi. If in Marathi, respond in Marathi default english.
 - Do not switch languages or use English if the user asked in a regional language.
 
 When user greets (hi, hello, hey):
@@ -289,7 +289,7 @@ async function callFallbackModel(question: string) {
 
 async function callGreetingsModel(question: string) {
   console.log("calling greetings modal...")
-  const client = getChatClient();
+  const client = getNvidiaClient();
 
   const res = await client.chat({
     messages: [{ role: "user", content: question }],
@@ -338,14 +338,12 @@ function shouldFallbackFromRagAnswer(answer: string): boolean {
   if (trimmed.includes(NOT_FOUND_TOKEN)) return true;
 
   const withoutRedirect = stripRedirectLines(trimmed);
-  if (!withoutRedirect) return true; // only redirect link / boilerplate
-
-  // If model slips into a refusal instead of emitting NOT_FOUND_IN_CONTEXT,
-  // force fallback so user still gets a helpful answer.
+  if (!withoutRedirect) return true;
   if (looksLikeRefusal(withoutRedirect) && withoutRedirect.length < 300) return true;
 
   return false;
 }
+
 // ─────────────────────────────────────────────────────────────
 // Main Controller
 // ─────────────────────────────────────────────────────────────
