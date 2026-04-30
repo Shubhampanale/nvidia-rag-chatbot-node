@@ -83,67 +83,71 @@ export const isLowIntentQuery = (query: string): boolean => {
   return greetings.includes(q) || q.length < 4;
 };
 
-type QueryIntent = "structured" | "descriptive" | "both";
+export const normalizeCoursesInQuestion = (question: string): string => {
+  const courses = ["mbbs", "bams", "bhms", "bds", "bpt"];
+  let normalized = question;
+  courses.forEach((course) => {
+    const re = new RegExp(`\\b${course}\\b`, "gi");
+    normalized = normalized.replace(re, course.toUpperCase());
+  });
+  return normalized;
+};
 
+type QueryIntent = "structured" | "descriptive" | "both";
+const TABLE_KEYWORDS = [
+  // College identity
+  "college code", "college type", "government", "private", "deemed",
+
+  // Courses
+  "mbbs", "bams", "bhms", "bpt", "bds", "course",
+
+  // Fee structure
+  "development fee", "tuition fee", "total fee",
+  "fees", "fee", "cost", "charges", "how much",
+
+  // Cutoff
+  "cutoff", "cut off", "first admitted", "last admitted",
+  "first mark", "last mark", "merit", "minimum marks",
+  "minimum score", "last rank", "admission rank",
+  "eligible", "qualify", "percentile",
+
+  // General listing triggers
+  "list", "show", "give me", "colleges for",
+  "which college", "available colleges"
+];
 export const detectQueryIntent = (question: string): QueryIntent => {
   const q = question.toLowerCase().trim();
 
-  const structuredPatterns: RegExp[] = [
-    /\bfee(?:s)?\b/i,
-    /\bcost\b/i,
-    /\bprice\b/i,
-    /\bamount\b/i,
-    /\brs\.?\b/i,
-    /₹/i,
-    /\bcut[- ]?off\b/i,
-    /\bmarks?\b/i,
-    /\bscore\b/i,
-    /\branks?\b/i,
-    /\bpercent\b/i,
-    /%/i,
-    /\bseat(?:s)?\b/i,
-    /\bquota\b/i,
-    /\bcategory\b/i,
-    /\bobc\b/i,
-    /\bsc\b/i,
-    /\bst\b/i,
-    /\bews\b/i,
-    /\bpwd\b/i,
-    /\bgeneral\b/i,
-    /\bcollege\b/i,
-    /\binstitute\b/i,
-    /\bcity\b/i,
-  ];
-
+  const isStructured = TABLE_KEYWORDS.some(keyword =>
+    q.includes(keyword)
+  );
   const descriptivePatterns: RegExp[] = [
-    /\bwhen\b/i,
-    /\bwhat\b/i,
-    /\bhow\b/i,
-    /\bdate(?:s)?\b/i,
-    /\bschedule\b/i,
-    /\btimeline\b/i,
-    /\bresult\b/i,
-    /\bhow\b/i,
-    /\bprocess\b/i,
-    /\bprocedure\b/i,
-    /\bsteps?\b/i,
-    /\bregistration\b/i,
-    /\bdocument(?:s)?\b/i,
-    /\beligibilit(?:y|ies)\b/i,
-    /\brules?\b/i,
-    /\bcounsel(?:l)?ing\b/i,
-    /\badmission\b/i,
-    /\bround(?:s)?\b/i,
-    /\bmop[- ]?up\b/i,
-    /\bstray\b/i,
+    /\bwhen\b/,
+    /\bwhat\b/,
+    /\bhow\b/,
+    /\bwhy\b/,
+    /\bprocess\b/,
+    /\bprocedure\b/,
+    /\bsteps?\b/,
+    /\bregistration\b/,
+    /\bdocument(?:s)?\b/,
+    /\beligibilit(?:y|ies)\b/,
+    /\brules?\b/,
+    /\bcounsel(?:l)?ing\b/,
+    /\badmission\b/,
+    /\bround(?:s)?\b/,
+    /\bmop[- ]?up\b/,
+    /\bstray\b/,
+    /\bschedule\b/,
+    /\btimeline\b/,
+    /\bresult\b/
   ];
 
-  const structuredScore = structuredPatterns.reduce((acc, re) => acc + (re.test(q) ? 1 : 0), 0);
-  const descriptiveScore = descriptivePatterns.reduce((acc, re) => acc + (re.test(q) ? 1 : 0), 0);
+  const isDescriptive = descriptivePatterns.some(re => re.test(q));
 
-  if (structuredScore > 0 && descriptiveScore > 0) return "both";
-  if (structuredScore > 0) return "structured";
-  if (descriptiveScore > 0) return "descriptive";
+  if (isStructured && isDescriptive) return "both";
+  if (isStructured) return "structured";
+  if (isDescriptive) return "descriptive";
 
   return "descriptive";
 };

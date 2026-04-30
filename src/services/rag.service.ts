@@ -1,6 +1,6 @@
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { config } from "../config/env";
-import { buildCleanContext, callFallbackModel, callGreetingsModel, callRagModel, detectQueryIntent, extractSources, isLowIntentQuery, shouldFallbackFromRagAnswer } from "../utils/rag.helpers";
+import { buildCleanContext, callFallbackModel, callGreetingsModel, callRagModel, detectQueryIntent, extractSources, isLowIntentQuery, normalizeCoursesInQuestion, shouldFallbackFromRagAnswer } from "../utils/rag.helpers";
 import { rerankVectorResults } from "../utils/rag.rerank";
 import { retrieveExcelTableRows } from "./excelTableRetrieval.service";
 import { loadGlobalVectorStore } from "./ingest.service";
@@ -12,9 +12,10 @@ export const generateRAGResponse = async (
   documentId?: string
 ): Promise<{ answer: string; sources: string[]; chunks: string }> => {
 
-  console.log("question::", question)
-  if (isLowIntentQuery(question)) {
-    const answer = await callGreetingsModel(question);
+  const updatedQuestion = await normalizeCoursesInQuestion(question);
+  console.log("question::", updatedQuestion)
+  if (isLowIntentQuery(updatedQuestion)) {
+    const answer = await callGreetingsModel(updatedQuestion);
 
     return {
       answer,
@@ -24,7 +25,7 @@ export const generateRAGResponse = async (
   }
 
   // 1. Load vector store
-  const intent = detectQueryIntent(question);
+  const intent = detectQueryIntent(updatedQuestion);
   console.log("intent::", intent)
   const usePdf = intent === "descriptive" || intent === "both";
   const useExcel = intent === "structured" || intent === "both";
@@ -43,13 +44,13 @@ export const generateRAGResponse = async (
 
   let resultsWithScores: Array<[any, number]> = [];
   if (pdfStore) {
-    const pdfResults = await pdfStore.similaritySearchWithScore(question, k);
+    const pdfResults = await pdfStore.similaritySearchWithScore(updatedQuestion, k);
     console.log("pdfResults::", pdfResults)
     resultsWithScores.push(...pdfResults);
   }
   if (useExcel) {
     try {
-      const tableResult = await retrieveExcelTableRows(question, { topKRows: 8 });
+      const tableResult = await retrieveExcelTableRows(updatedQuestion, { topKRows: 8 });
       if (tableResult) {
         for (const r of tableResult.rows) {
           const score =
@@ -84,14 +85,14 @@ export const generateRAGResponse = async (
       .slice(0, 3);
   }
 
-  const topResults = rerankVectorResults(question, resultsWithScores as any, { topK: 3 });
+  const topResults = rerankVectorResults(updatedQuestion, resultsWithScores as any, { topK: 3 });
   console.log("topResults::", topResults)
   const docs = topResults.map(([doc]) => doc);
   const bestScore = topResults[0]?.[1];
 
   if (!bestScore || bestScore > config.similarityThreshold) {
     console.log(`Retrieval score too low: ${bestScore} > ${config.similarityThreshold}`);
-    const answer = await callFallbackModel(question);
+    const answer = await callFallbackModel(updatedQuestion);
 
     return {
       answer,
@@ -104,10 +105,10 @@ export const generateRAGResponse = async (
   const context = buildCleanContext(docs);
   console.log("context::", context)
   const sources = extractSources(docs);
-  const ragAnswer = await callRagModel(question, context);
+  const ragAnswer = await callRagModel(updatedQuestion, context);
 
   if (shouldFallbackFromRagAnswer(ragAnswer)) {
-    const answer = await callFallbackModel(question);
+    const answer = await callFallbackModel(updatedQuestion);
 
     return {
       answer,
