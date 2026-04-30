@@ -29,7 +29,7 @@ export class NvidiaClient implements ChatClient {
 
     // Add system prompt to the first user message (if needed), then append the user's messages
     const messagesWithSystemPrompt = [
-      // { role: 'assistant', content: systemPrompt },
+      { role: 'assistant', content: systemPrompt },
       ...params.messages,
     ];
 
