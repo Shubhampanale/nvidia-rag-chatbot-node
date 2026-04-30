@@ -1,6 +1,7 @@
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { config } from "../config/env";
 import { buildCleanContext, callFallbackModel, callGreetingsModel, callRagModel, detectQueryIntent, extractSources, isLowIntentQuery, shouldFallbackFromRagAnswer } from "../utils/rag.helpers";
+import { rerankVectorResults } from "../utils/rag.rerank";
 import { retrieveExcelTableRows } from "./excelTableRetrieval.service";
 import { loadGlobalVectorStore } from "./ingest.service";
 
@@ -38,23 +39,24 @@ export const generateRAGResponse = async (
     pdfStore = cachedVectorStore;
   }
 
-  const k = documentId ? 10 : 5;
+  const k = documentId ? Math.max(15, config.topKResults) : Math.max(12, config.topKResults);
 
   let resultsWithScores: Array<[any, number]> = [];
   if (pdfStore) {
     const pdfResults = await pdfStore.similaritySearchWithScore(question, k);
+    console.log("pdfResults::", pdfResults)
     resultsWithScores.push(...pdfResults);
   }
   if (useExcel) {
     try {
       const tableResult = await retrieveExcelTableRows(question, { topKRows: 8 });
       if (tableResult) {
-        // Assign a strong score so table rows are preferred when intent is structured
-        let pseudoScore = 0.2;
         for (const r of tableResult.rows) {
+          const score =
+            typeof r.score === "number" && Number.isFinite(r.score) ? r.score : Number.POSITIVE_INFINITY;
           resultsWithScores.push([
             {
-              pageContent: JSON.stringify(r.row),
+              pageContent: r.pageContent ?? JSON.stringify(r.row),
               metadata: {
                 source: "excel",
                 type: "row",
@@ -65,9 +67,8 @@ export const generateRAGResponse = async (
                 raw: r.row,
               },
             },
-            pseudoScore,
+            score,
           ]);
-          pseudoScore += 0.01;
         }
       }
     } catch (e) {
@@ -75,21 +76,19 @@ export const generateRAGResponse = async (
     }
   }
 
-  // Merge by ascending distance score
   resultsWithScores.sort((a, b) => a[1] - b[1]);
 
-  // 2. Filter by document if needed
   if (documentId) {
     resultsWithScores = resultsWithScores
       .filter(([doc]) => doc.metadata?.documentId === documentId)
       .slice(0, 3);
   }
 
-  const topResults = resultsWithScores.slice(0, 3);
+  const topResults = rerankVectorResults(question, resultsWithScores as any, { topK: 3 });
+  console.log("topResults::", topResults)
   const docs = topResults.map(([doc]) => doc);
   const bestScore = topResults[0]?.[1];
 
-  // ❌ No relevant context → fallback directly
   if (!bestScore || bestScore > config.similarityThreshold) {
     console.log(`Retrieval score too low: ${bestScore} > ${config.similarityThreshold}`);
     const answer = await callFallbackModel(question);

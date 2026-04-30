@@ -65,7 +65,7 @@ export const callGreetingsModel = async (question: string) => {
   console.log("calling greetings modal...")
   const client = getNvidiaClient();
 
-  const res = await client.chat({ 
+  const res = await client.chat({
     messages: [{ role: "user", content: question }],
     systemPrompt: greetingPrompt,
   });
@@ -86,68 +86,66 @@ export const isLowIntentQuery = (query: string): boolean => {
 type QueryIntent = "structured" | "descriptive" | "both";
 
 export const detectQueryIntent = (question: string): QueryIntent => {
-  const q = question.toLowerCase();
+  const q = question.toLowerCase().trim();
 
-  const structuredHints = [
-    "fees",
-    "fee",
-    "cutoff",
-    "score",
-    "marks",
-    "rank",
-    "college",
-    "institute",
-    "city",
-    "seat",
-    "seats",
-    "government",
-    "govt",
-    "private",
-    "deemed",
-    "under",
-    "less than",
-    "below",
-    "category",
-    "obc",
-    "sc",
-    "st",
-    "ews",
-    "pws",
-    "pwD".toLowerCase(),
-    "general",
-    "state",
-    "maharashtra",
+  const structuredPatterns: RegExp[] = [
+    /\bfee(?:s)?\b/i,
+    /\bcost\b/i,
+    /\bprice\b/i,
+    /\bamount\b/i,
+    /\brs\.?\b/i,
+    /₹/i,
+    /\bcut[- ]?off\b/i,
+    /\bmarks?\b/i,
+    /\bscore\b/i,
+    /\branks?\b/i,
+    /\bpercent\b/i,
+    /%/i,
+    /\bseat(?:s)?\b/i,
+    /\bquota\b/i,
+    /\bcategory\b/i,
+    /\bobc\b/i,
+    /\bsc\b/i,
+    /\bst\b/i,
+    /\bews\b/i,
+    /\bpwd\b/i,
+    /\bgeneral\b/i,
+    /\bcollege\b/i,
+    /\binstitute\b/i,
+    /\bcity\b/i,
   ];
 
-  const descriptiveHints = [
-    "process",
-    "procedure",
-    "how to",
-    "steps",
-    "schedule",
-    "timeline",
-    "dates",
-    "round",
-    "mop-up",
-    "mopup",
-    "stray",
-    "registration",
-    "documents",
-    "eligibility",
-    "rules",
-    "counselling",
-    "counseling",
-    "admission",
-    "choice filling",
+  const descriptivePatterns: RegExp[] = [
+    /\bwhen\b/i,
+    /\bwhat\b/i,
+    /\bhow\b/i,
+    /\bdate(?:s)?\b/i,
+    /\bschedule\b/i,
+    /\btimeline\b/i,
+    /\bresult\b/i,
+    /\bhow\b/i,
+    /\bprocess\b/i,
+    /\bprocedure\b/i,
+    /\bsteps?\b/i,
+    /\bregistration\b/i,
+    /\bdocument(?:s)?\b/i,
+    /\beligibilit(?:y|ies)\b/i,
+    /\brules?\b/i,
+    /\bcounsel(?:l)?ing\b/i,
+    /\badmission\b/i,
+    /\bround(?:s)?\b/i,
+    /\bmop[- ]?up\b/i,
+    /\bstray\b/i,
   ];
 
-  const hasStructured = structuredHints.some((h) => q.includes(h));
-  const hasDescriptive = descriptiveHints.some((h) => q.includes(h));
+  const structuredScore = structuredPatterns.reduce((acc, re) => acc + (re.test(q) ? 1 : 0), 0);
+  const descriptiveScore = descriptivePatterns.reduce((acc, re) => acc + (re.test(q) ? 1 : 0), 0);
 
-  if (hasStructured && hasDescriptive) return "both";
-  if (hasStructured) return "structured";
-  if (hasDescriptive) return "descriptive";
-  return "both";
+  if (structuredScore > 0 && descriptiveScore > 0) return "both";
+  if (structuredScore > 0) return "structured";
+  if (descriptiveScore > 0) return "descriptive";
+
+  return "descriptive";
 };
 
 export const NOT_FOUND_TOKEN = "NOT_FOUND_IN_CONTEXT";

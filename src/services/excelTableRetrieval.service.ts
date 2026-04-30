@@ -15,6 +15,8 @@ export interface RetrievedExcelRow {
   sheet_name: string;
   row_index: number;
   row: Record<string, unknown>;
+  pageContent?: string;
+  score?: number;
 }
 
 export interface ExcelTableRetrievalResult {
@@ -22,6 +24,8 @@ export interface ExcelTableRetrievalResult {
   table_title: string;
   sheet_name: string;
   rows: RetrievedExcelRow[];
+  router_score?: number;
+  best_row_score?: number;
 }
 
 type RouterDoc = {
@@ -95,16 +99,20 @@ const pickBestLexicalTable = (query: string, routerDocs: RouterDoc[]): RouterDoc
   return null;
 };
 
-const pickBestSemanticTable = async (query: string): Promise<RouterDoc | null> => {
+const pickBestSemanticTable = async (
+  query: string
+): Promise<{ doc: RouterDoc; score: number } | null> => {
   try {
     const routerStore = await loadExcelTableVectorStore("query");
     const hits = await routerStore.similaritySearchWithScore(query, 5);
     const summaries = hits
       .filter(([doc]) => doc.metadata?.type === "table_summary")
       .sort((a, b) => a[1] - b[1]);
-    const best = summaries[0]?.[0] as any;
+    const best = summaries[0] as any;
     if (!best) return null;
-    return { pageContent: best.pageContent, metadata: best.metadata ?? {} };
+    const doc = best[0];
+    const score = best[1];
+    return { doc: { pageContent: doc.pageContent, metadata: doc.metadata ?? {} }, score };
   } catch {
     return null;
   }
@@ -129,7 +137,8 @@ export async function retrieveExcelTableRows(
 
   // Route to a table (lexical first, then semantic)
   const lexical = pickBestLexicalTable(query, routerDocs);
-  const routed = lexical ?? (await pickBestSemanticTable(query));
+  const semantic = lexical ? null : await pickBestSemanticTable(query);
+  const routed = lexical ?? semantic?.doc ?? null;
   if (!routed) return null;
 
   const table_id = String(routed.metadata?.table_id ?? "");
@@ -141,8 +150,9 @@ export async function retrieveExcelTableRows(
   if (!rowStore) return null;
 
   const hits = await rowStore.similaritySearchWithScore(query, topKRows);
+  const bestRowScore = hits[0]?.[1];
   const rows: RetrievedExcelRow[] = hits
-    .map(([doc]) => {
+    .map(([doc, score]) => {
       const meta = (doc.metadata ?? {}) as any;
       const row = (meta.row_content ?? meta.raw ?? {}) as Record<string, unknown>;
       return {
@@ -151,6 +161,8 @@ export async function retrieveExcelTableRows(
         sheet_name: String(meta.sheet_name ?? sheet_name),
         row_index: Number(meta.row_index ?? 0),
         row,
+        pageContent: doc.pageContent,
+        score,
       };
     })
     .filter((r) => r.table_id === table_id)
@@ -163,5 +175,7 @@ export async function retrieveExcelTableRows(
     table_title,
     sheet_name,
     rows,
+    router_score: semantic?.score,
+    best_row_score: bestRowScore,
   };
 }
