@@ -19,12 +19,10 @@ import { College } from "../models/college.model";
 import { IntentDetector } from "./intentDetector.service";
 import { MongoQueryBuilder } from "./mongoQueryBuilder.service";
 
-// ─── Singletons ───────────────────────────────────────────────────────────────
 let cachedVectorStore: FaissStore | null = null;
 const intentDetector = new IntentDetector();
 const queryBuilder = new MongoQueryBuilder();
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 export type RAGResponse = {
   answer: string;
   sources: string[];
@@ -33,7 +31,6 @@ export type RAGResponse = {
   intent?: string;
 };
 
-// ─── Main Entry ───────────────────────────────────────────────────────────────
 export const generateRAGResponse = async (
   question: string,
   documentId?: string
@@ -60,7 +57,6 @@ export const generateRAGResponse = async (
   }
 };
 
-// ─── Handler: Structured → Direct Answer (No LLM) ────────────────────────────
 const handleStructured = async (
   question: string,
   parsed: ParsedIntent
@@ -90,7 +86,6 @@ const handleStructured = async (
   };
 };
 
-// ─── Handler: Descriptive → FAISS + LLM ──────────────────────────────────────
 const handleDescriptive = async (
   question: string,
   documentId?: string
@@ -135,7 +130,6 @@ const handleDescriptive = async (
   return { answer: ragAnswer, sources, chunks: context, intent: "descriptive" };
 };
 
-// ─── Handler: Both → MongoDB direct + FAISS/LLM ──────────────────────────────
 const handleBoth = async (
   question: string,
   parsed: ParsedIntent,
@@ -174,7 +168,6 @@ const handleBoth = async (
   };
 };
 
-// ─── Core Answer Builder ──────────────────────────────────────────────────────
 const buildDirectAnswer = (results: unknown[], parsed: ParsedIntent): string => {
   const colleges = results as any[];
   const { filters } = parsed;
@@ -191,7 +184,6 @@ const buildDirectAnswer = (results: unknown[], parsed: ParsedIntent): string => 
   return buildCollegeListAnswer(colleges, filters);
 };
 
-// ─── College List Answer ──────────────────────────────────────────────────────
 const buildCollegeListAnswer = (colleges: any[], filters: ParsedIntent["filters"]): string => {
   const ctx = buildContextPhrase(filters);
   const total = colleges.length;
@@ -248,7 +240,6 @@ const buildCollegeListAnswer = (colleges: any[], filters: ParsedIntent["filters"
   return [opening, tableHeader, rows, tableFooter, closing].join("");
 };
 
-// ─── Fee Answer ───────────────────────────────────────────────────────────────
 const buildFeeAnswer = (colleges: any[], filters: ParsedIntent["filters"]): string => {
   const ctx = buildContextPhrase(filters);
   const total = colleges.length;
@@ -316,7 +307,6 @@ const buildFeeAnswer = (colleges: any[], filters: ParsedIntent["filters"]): stri
   return [opening, tableHeader, rows, tableFooter, closing].join("");
 };
 
-// ─── Cutoff Answer ────────────────────────────────────────────────────────────
 const buildCutoffAnswer = (colleges: any[], filters: ParsedIntent["filters"]): string => {
   const ctx = buildContextPhrase(filters);
   const total = colleges.length;
@@ -397,9 +387,7 @@ const buildCutoffAnswer = (colleges: any[], filters: ParsedIntent["filters"]): s
 
   return [opening, tableHeader, rows, tableFooter, closing].join("");
 };
-// ─── Shared Helpers ───────────────────────────────────────────────────────────
 
-// Builds "for MBBS in Mumbai (2024-2025)" style phrase
 const buildContextPhrase = (filters: ParsedIntent["filters"]): string => {
   const parts: string[] = [];
 
@@ -424,7 +412,6 @@ const buildContextPhrase = (filters: ParsedIntent["filters"]): string => {
   return parts.length ? ` ${parts.join(" ")}` : "";
 };
 
-// Natural closing tip sentence
 const buildClosingSentence = (
   filters: ParsedIntent["filters"],
   type: "college" | "fee" | "cutoff"
@@ -472,15 +459,12 @@ const buildNoResultSentence = (filters: ParsedIntent["filters"]): string => {
   `;
 };
 
-// "Mumbai, Maharashtra" — skips nulls
 const joinParts = (parts: (string | null | undefined)[]): string =>
   parts.filter(Boolean).join(", ") || "N/A";
 
-// ₹1,20,000 format
 const formatINR = (amount: number): string =>
   "₹" + amount.toLocaleString("en-IN");
 
-// ─── Merge Both Intent Answers ────────────────────────────────────────────────
 const mergeAnswers = (structured: string, descriptive: string): string => {
   const parts: string[] = [];
   if (structured) parts.push(structured);
@@ -488,7 +472,6 @@ const mergeAnswers = (structured: string, descriptive: string): string => {
   return parts.filter(Boolean).join("\n");
 };
 
-// ─── MongoDB Query Runner ─────────────────────────────────────────────────────
 const runMongoQuery = async (parsed: ParsedIntent): Promise<unknown[]> => {
   const query = queryBuilder.build(parsed);
 
