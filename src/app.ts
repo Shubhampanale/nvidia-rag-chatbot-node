@@ -3,8 +3,8 @@ import cors from "cors";
 import fs from "fs";
 import { config } from "./config/env";
 import ingestRoutes from "./routes/ingest.routes";
-import ingestExcelRoutes from "./routes/ingestExcel.routes";
 import chatRoutes from "./routes/chat.routes";
+import syncRoute from "./routes/college.route";
 import { errorMiddleware } from "./middleware/error.middleware";
 import { connectDB } from "./config/db";
 
@@ -29,8 +29,8 @@ app.get("/health", (_req, res) => {
 
 // Routes
 app.use("/api/ingest", ingestRoutes);
-app.use("/api/ingest-excel", ingestExcelRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/sync", syncRoute);
 
 // Error handler (must be last)
 app.use(errorMiddleware);

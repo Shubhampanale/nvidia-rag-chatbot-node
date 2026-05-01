@@ -13,7 +13,6 @@ import {
 import { rerankVectorResults } from "../utils/rag.rerank";
 import { loadGlobalVectorStore } from "./ingest.service";
 import { ParsedIntent } from "../types/intent";
-import { CourseCutOff } from "../models/college.cutoff.model";
 import { CollegeFeeStructure } from "../models/college.fees.model";
 import { College } from "../models/college.model";
 import { IntentDetector } from "./intentDetector.service";
@@ -44,8 +43,8 @@ export const generateRAGResponse = async (
   }
 
   const parsed = intentDetector.detect(updatedQuestion);
-  console.log("[RAG] intent:", parsed.intent, "| confidence:", parsed.confidence);
-  console.log("[RAG] filters:", JSON.stringify(parsed.filters, null, 2));
+  console.log("[RAG] intent::", parsed.intent, "| confidence:", parsed.confidence);
+  console.log("[RAG] filters::", JSON.stringify(parsed.filters, null, 2));
 
   switch (parsed.intent) {
     case "structured":
@@ -176,10 +175,7 @@ const buildDirectAnswer = (results: unknown[], parsed: ParsedIntent): string => 
     return buildNoResultSentence(filters);
   }
 
-  const hasFee = colleges.some(c => c.feeInfo != null);
-  const hasCutoff = colleges.some(c => c.cutoffInfo != null);
-
-  if (hasCutoff) return buildCutoffAnswer(colleges, filters);
+  const hasFee = colleges.some(c => c.tution_fee != null || c.development_fee != null || c.total_fee != null);
   if (hasFee) return buildFeeAnswer(colleges, filters);
   return buildCollegeListAnswer(colleges, filters);
 };
@@ -205,10 +201,7 @@ const buildCollegeListAnswer = (colleges: any[], filters: ParsedIntent["filters"
           <th>Location</th>
           <th>Type</th>
           <th>Code</th>
-          <th>UG Courses</th>
-          <th>PG Courses</th>
-          <th>Hostel</th>
-          <th>Established</th>
+          <th>Courses</th>
         </tr>
       </thead>
       <tbody>
@@ -219,13 +212,10 @@ const buildCollegeListAnswer = (colleges: any[], filters: ParsedIntent["filters"
       <tr>
         <td>${i + 1}</td>
         <td>${c.college_name ?? "Unknown College"}</td>
-        <td>${joinParts([c.city_name, c.state_name])}</td>
+        <td>${joinParts([c.city, c.state])}</td>
         <td>${c.college_type ?? "N/A"}</td>
         <td>${c.college_code ?? "N/A"}</td>
-        <td>${c.ug_courses?.length ? c.ug_courses.join(", ") : "-"}</td>
-        <td>${c.pg_courses?.length ? c.pg_courses.join(", ") : "-"}</td>
-        <td>${c.is_hostel ? "Available" : "Not Available"}</td>
-        <td>${c.established_year ?? "-"}</td>
+        <td>${c.courses?.length ? c.courses.join(", ") : "-"}</td>
       </tr>
     `;
   }).join("");
@@ -274,25 +264,21 @@ const buildFeeAnswer = (colleges: any[], filters: ParsedIntent["filters"]): stri
           <th>Tuition Fee</th>
           <th>Development Fee</th>
           <th>Total Fee</th>
-          <th>Academic Year</th>
         </tr>
       </thead>
       <tbody>
   `;
 
   const rows = colleges.map((c, i) => {
-    const f = c.feeInfo || {};
-
     return `
       <tr>
         <td>${i + 1}</td>
         <td>${c.college_name ?? "Unknown College"}</td>
-        <td>${joinParts([c.city_name, c.state_name])}</td>
+        <td>${joinParts([c.city, c.state])}</td>
         <td>${c.college_type ?? "N/A"}</td>
-        <td>${f.tution_fee ? formatINR(f.tution_fee) : "-"}</td>
-        <td>${f.development_fee ? formatINR(f.development_fee) : "-"}</td>
-        <td>${f.total_fee ? formatINR(f.total_fee) : "-"}</td>
-        <td>${f.academic_year ?? "-"}</td>
+        <td>${c.tution_fee ? formatINR(c.tution_fee) : "-"}</td>
+        <td>${c.development_fee ? formatINR(c.development_fee) : "-"}</td>
+        <td>${c.total_fee ? formatINR(c.total_fee) : "-"}</td>
       </tr>
     `;
   }).join("");
@@ -303,87 +289,6 @@ const buildFeeAnswer = (colleges: any[], filters: ParsedIntent["filters"]): stri
   `;
 
   const closing = `<p>${buildClosingSentence(filters, "fee")}</p>`;
-
-  return [opening, tableHeader, rows, tableFooter, closing].join("");
-};
-
-const buildCutoffAnswer = (colleges: any[], filters: ParsedIntent["filters"]): string => {
-  const ctx = buildContextPhrase(filters);
-  const total = colleges.length;
-  const cutoff = filters.cutoff;
-  const fieldName = cutoff?.fieldName ?? "open_al";
-
-  const categoryLabel = cutoff?.category?.toUpperCase() ?? "OPEN";
-  const genderLabel = cutoff?.gender === "f"
-    ? "Female" : cutoff?.gender === "m"
-      ? "Male" : null;
-
-  const typeLabel = {
-    af: "first admitted",
-    al: "last admitted",
-    mf: "merit first",
-    ml: "merit last"
-  }[cutoff?.type ?? "al"];
-
-  const cutoffDesc = [
-    categoryLabel,
-    genderLabel,
-    typeLabel,
-    "cutoff",
-  ].filter(Boolean).join(" ");
-
-  const firstCutoffValue = colleges[0]?.cutoffInfo?.[fieldName];
-
-  const opening = `
-    <p>
-      ${total === 1
-      ? `Here is 1 college${ctx} with ${cutoffDesc} data.`
-      : `Here are ${total} colleges${ctx} sorted by ${cutoffDesc}.
-           ${firstCutoffValue ? ` Best cutoff starts at ${firstCutoffValue} marks.` : ""}`}
-    </p>
-  `;
-
-  const tableHeader = `
-    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%;">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>College Name</th>
-          <th>Location</th>
-          <th>Type</th>
-          <th>Code</th>
-          <th>Course</th>
-          <th>${cutoffDesc.charAt(0).toUpperCase() + cutoffDesc.slice(1)}</th>
-          <th>Academic Year</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
-
-  const rows = colleges.map((c, i) => {
-    const co = c.cutoffInfo || {};
-    const value = co?.[fieldName];
-
-    return `
-      <tr>
-        <td>${i + 1}</td>
-        <td>${c.college_name ?? "Unknown College"}</td>
-        <td>${joinParts([c.city_name, c.state_name])}</td>
-        <td>${c.college_type ?? "N/A"}</td>
-        <td>${c.college_code ?? "N/A"}</td>
-        <td>${co.course_name ?? "-"}</td>
-        <td>${value && value !== 0 ? value : "-"}</td>
-        <td>${co.academic_year ?? "-"}</td>
-      </tr>
-    `;
-  }).join("");
-
-  const tableFooter = `
-      </tbody>
-    </table>
-  `;
-
-  const closing = `<p>${buildClosingSentence(filters, "cutoff")}</p>`;
 
   return [opening, tableHeader, rows, tableFooter, closing].join("");
 };
@@ -405,23 +310,14 @@ const buildContextPhrase = (filters: ParsedIntent["filters"]): string => {
     parts.push(`in ${filters.state}`);
   }
 
-  if (filters.academicYear) {
-    parts.push(`for ${filters.academicYear}`);
-  }
-
   return parts.length ? ` ${parts.join(" ")}` : "";
 };
 
 const buildClosingSentence = (
   filters: ParsedIntent["filters"],
-  type: "college" | "fee" | "cutoff"
+  type: "college" | "fee"
 ): string => {
   const tips: string[] = [];
-
-  // Smart suggestion: missing academic year
-  if (!filters.academicYear) {
-    tips.push("Tip: Add an academic year (e.g., 2024–25) to get more accurate results.");
-  }
 
   // Contextual next-step suggestions
   if (type === "college") {
@@ -430,10 +326,6 @@ const buildClosingSentence = (
 
   if (type === "fee") {
     tips.push("Want help comparing fees or checking cutoffs? Just ask.");
-  }
-
-  if (type === "cutoff") {
-    tips.push("You can also check fee structure or compare colleges based on your rank.");
   }
 
   return tips.length
@@ -477,14 +369,12 @@ const runMongoQuery = async (parsed: ParsedIntent): Promise<unknown[]> => {
 
   console.log("[Mongo] collegeFilter:", JSON.stringify(query.collegeFilter));
   console.log("[Mongo] feeFilter:", JSON.stringify(query.feeFilter));
-  console.log("[Mongo] cutoffFilter:", JSON.stringify(query.cutoffFilter));
 
   const needsFee = query.feeFilter !== null;
-  const needsCutoff = query.cutoffFilter !== null;
 
   try {
     // Simple college listing
-    if (!needsFee && !needsCutoff) {
+    if (!needsFee) {
       const cursor = College.find(query.collegeFilter).limit(query.limit);
       if (query.sort) cursor.sort(query.sort as any);
       return await cursor.lean();
@@ -494,50 +384,12 @@ const runMongoQuery = async (parsed: ParsedIntent): Promise<unknown[]> => {
     if (needsFee && query.feeFilter) {
       const feeRecords = await CollegeFeeStructure
         .find(query.feeFilter)
-        .select("college_id college_name college_code tution_fee total_fee development_fee academic_year")
+        .select("college_name college_code tution_fee total_fee development_fee state city college_type")
         .lean();
-
-      const collegeIds = feeRecords.map((f: any) => f.college_id.toString());
-      const colleges = await College.find({
-        ...query.collegeFilter,
-        _id: { $in: collegeIds },
-      }).limit(query.limit).lean();
-
-      return colleges.map((college: any) => ({
-        ...college,
-        feeInfo: feeRecords.find(
-          (f: any) => f.college_id.toString() === college._id.toString()
-        ) ?? null,
-      }));
+      return feeRecords
     }
-
-    // Cutoff-based query
-    if (needsCutoff && query.cutoffFilter) {
-      const fieldName = parsed.filters.cutoff?.fieldName ?? "open_al";
-      const cutoffRecords = await CourseCutOff
-        .find(query.cutoffFilter)
-        .select(`college_id college_name college_code course_name academic_year ${fieldName}`)
-        .sort(query.sort as any ?? { [fieldName]: 1 })
-        .limit(query.limit)
-        .lean();
-
-      const collegeIds = cutoffRecords.map((c: any) => c.college_id);
-      const colleges = await College.find({
-        ...query.collegeFilter,
-        college_id: { $in: collegeIds },
-      }).lean();
-
-      return colleges.map((college: any) => ({
-        ...college,
-        cutoffInfo: cutoffRecords.find(
-          (c: any) => c.college_id === college.college_id
-        ) ?? null,
-      }));
-    }
-
   } catch (err) {
     console.error("[Mongo] query failed:", (err as Error)?.message ?? err);
   }
-
   return [];
 };
