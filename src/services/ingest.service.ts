@@ -5,8 +5,62 @@ import { FaissStore } from "@langchain/community/vectorstores/faiss";
 import { createEmbeddings } from "./embeddings.service";
 import { config } from "../config/env";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import { Document } from "@langchain/core/documents";
 
 export const GLOBAL_STORE_NAME = "global";
+
+export async function ingestJSON(
+  filePath: string,
+  documentId: string
+): Promise<number> {
+  // 1. Read JSON
+  const rawData = fs.readFileSync(filePath, "utf-8");
+  const jsonArray = JSON.parse(rawData);
+
+  if (!Array.isArray(jsonArray) || jsonArray.length === 0) {
+    throw new Error("JSON file must be a non-empty array");
+  }
+
+  console.log(`[INGEST] Loaded ${jsonArray.length} items from JSON`);
+
+  // 2. Convert each item to a Document
+  const docs = jsonArray.map((item, index) => {
+    const content = `Question: ${item.question}\nAnswer: ${item.answer}\nCategory: ${item.category}`;
+    return new Document({
+      pageContent: content,
+      metadata: {
+        documentId,
+        index,
+        category: item.category,
+        question: item.question,
+      },
+    });
+  });
+
+  // 3. Embed with "passage" type and store in GLOBAL FAISS store
+  const embeddings = createEmbeddings("passage");
+
+  const globalStorePath = path.join(config.vectorStoreDir, GLOBAL_STORE_NAME);
+  fs.mkdirSync(globalStorePath, { recursive: true });
+
+  let vectorStore: FaissStore;
+
+  if (fs.existsSync(path.join(globalStorePath, "docstore.json"))) {
+    // Load existing global store and add new documents
+    console.log(`[INGEST] Loading existing global store...`);
+    vectorStore = await FaissStore.load(globalStorePath, embeddings);
+    await vectorStore.addDocuments(docs);
+  } else {
+    // Create new global store
+    console.log(`[INGEST] Creating new global store...`);
+    vectorStore = await FaissStore.fromDocuments(docs, embeddings);
+  }
+
+  await vectorStore.save(globalStorePath);
+
+  console.log(`[INGEST] Global vector store updated with JSON data at ${globalStorePath} (${docs.length} new items)`);
+  return docs.length;
+}
 
 export async function ingestPDF(
   filePath: string,

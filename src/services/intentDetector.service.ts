@@ -9,16 +9,34 @@ import {
   SEMANTIC_SIGNALS, FEE_PATTERNS, SORT_SIGNALS,
 } from "../config/intentConfig";
 
+
+// 🔥 NEW: Question signals (multi-language)
+const QUESTION_PATTERNS: RegExp[] = [
+  /\bwho\b/, /\bwhat\b/, /\bwhy\b/, /\bhow\b/, /\bwhen\b/, /\bwhich\b/,
+  /\bkon\b/, /\bkaun\b/, /\bkaise\b/, /\bkyu\b/,
+  /कोण/, /का/, /कसा|कशी|कसे/, /कधी/
+];
+
+// 🔥 NEW: action verbs (structured intent trigger)
+const ACTION_PATTERNS = /\b(list|show|find|search|give me|display)\b/;
+
+
 export class IntentDetector {
 
   detect(question: string): ParsedIntent {
     const raw = question;
     const q = question.toLowerCase().trim();
+
     const structuredHits = this.getStructuredHits(q);
     const descriptiveHits = this.getDescriptiveHits(q);
     const isSemantic = SEMANTIC_SIGNALS.some(re => re.test(q));
-    const intent = this.resolveIntent(q, structuredHits, descriptiveHits, isSemantic);
-    const confidence = this.resolveConfidence(structuredHits, descriptiveHits, isSemantic);
+
+    // 🔥 NEW scoring system
+    const scores = this.calculateScores(q, structuredHits, descriptiveHits, isSemantic);
+
+    const intent = this.resolveIntent(scores);
+    const confidence = this.resolveConfidence(scores);
+
     const courses = this.extractCourses(q);
 
     return {
@@ -42,59 +60,68 @@ export class IntentDetector {
     };
   }
 
-  // ─── Intent Resolution ────────────────────────────────────────────────────
-
-  private resolveIntent(
+  // 🧠 NEW: scoring engine
+  private calculateScores(
     q: string,
     structuredHits: string[],
     descriptiveHits: string[],
     isSemantic: boolean
-  ): QueryIntent {
-    if (isSemantic) return "descriptive";
+  ) {
+    let structured = 0;
+    let descriptive = 0;
 
-    const howOverridden = HOW_STRUCTURED_OVERRIDES.some(re => re.test(q));
-    const cleanDescriptive = howOverridden
-      ? descriptiveHits.filter(h => !["when", "what_is", "what_are"].includes(h))
-      : descriptiveHits;
+    const hasCourse = this.extractCourses(q).length > 0;
+    const hasLocation = this.extractCity(q) || this.extractState(q);
+    const isQuestion = QUESTION_PATTERNS.some(re => re.test(q));
+    const hasAction = ACTION_PATTERNS.test(q);
 
-    const hasStructured = structuredHits.length > 0;
-    const hasDescriptive = cleanDescriptive.length > 0;
+    // 🔹 structured scoring
+    if (hasAction) structured += 3;
+    if (structuredHits.length > 0) structured += 2;
+    if (hasCourse) structured += 1;
+    if (hasLocation) structured += 1;
 
-    if (hasStructured && hasDescriptive) return "both";
-    if (hasStructured) return "structured";
-    if (hasDescriptive) return "descriptive";
+    // 🔹 descriptive scoring
+    if (isQuestion) descriptive += 4; // 🔥 strongest signal
+    if (descriptiveHits.length > 0) descriptive += 2;
+    if (isSemantic) descriptive += 3;
 
-    const hasLocationOrCourse =
-      this.extractCity(q) !== null || this.extractCourses(q).length > 0;
-
-    return hasLocationOrCourse ? "structured" : "descriptive";
+    return { structured, descriptive };
   }
 
-  private resolveConfidence(
-    structuredHits: string[],
-    descriptiveHits: string[],
-    isSemantic: boolean
-  ): "high" | "medium" | "low" {
-    if (isSemantic) return "high";
-    if (structuredHits.length >= 2) return "high";
-    if (structuredHits.length === 1 || descriptiveHits.length >= 2) return "medium";
+  private resolveIntent(scores: { structured: number; descriptive: number }): QueryIntent {
+    const { structured, descriptive } = scores;
+
+    if (descriptive >= structured + 2) return "descriptive";
+    if (structured >= descriptive + 2) return "structured";
+    return "descriptive";
+  }
+
+  private resolveConfidence(scores: { structured: number; descriptive: number }) {
+    const diff = Math.abs(scores.structured - scores.descriptive);
+
+    if (diff >= 3) return "high";
+    if (diff === 2) return "medium";
     return "low";
   }
 
-  // ─── Hit Collectors ───────────────────────────────────────────────────────
+  // ───────────────────────── EXISTING METHODS (UNCHANGED) ─────────────────────────
 
   private getStructuredHits(q: string): string[] {
     const hits: string[] = [];
     for (const kw of STRONG_STRUCTURED_KEYWORDS) {
       if (q.includes(kw)) hits.push(kw);
     }
+
     const hasLocation = this.extractCity(q) !== null || this.extractState(q) !== null;
     const hasCourse = this.extractCourses(q).length > 0;
+
     if (hasLocation || hasCourse) {
       for (const kw of WEAK_STRUCTURED_KEYWORDS) {
         if (q.includes(kw)) hits.push(`weak:${kw}`);
       }
     }
+
     return hits;
   }
 
@@ -103,8 +130,6 @@ export class IntentDetector {
       .filter(({ pattern }) => pattern.test(q))
       .map(({ label }) => label);
   }
-
-  // ─── Extractors ───────────────────────────────────────────────────────────
 
   private extractCity(q: string): string | null {
     for (const city of CITIES) {
@@ -165,8 +190,8 @@ export class IntentDetector {
   private extractFeeField(q: string): "tution_fee" | "total_fee" | "development_fee" | null {
     if (/development fee/.test(q)) return "development_fee";
     if (/total fee/.test(q)) return "total_fee";
-    if (/tuition|tution/.test(q)) return "tution_fee"; // note: your schema has typo "tution_fee"
-    if (/fee|fees|cost/.test(q)) return "total_fee";  // default to total_fee
+    if (/tuition|tution/.test(q)) return "tution_fee";
+    if (/fee|fees|cost/.test(q)) return "total_fee";
     return null;
   }
 

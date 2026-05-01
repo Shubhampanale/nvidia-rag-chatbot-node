@@ -51,6 +51,7 @@ export const callRagModel = async (question: string, context: string) => {
 };
 
 export const callFallbackModel = async (question: string) => {
+  console.log("calling fallback modal...")
   const client = getChatClient();
 
   const res = await client.chat({
