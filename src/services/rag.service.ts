@@ -40,7 +40,8 @@ export const generateRAGResponse = async (
     pdfStore = cachedVectorStore;
   }
 
-  const k = documentId ? Math.max(15, config.topKResults) : Math.max(12, config.topKResults);
+  const k = Math.max(8, config.topKResults);
+  console.log("k::", k)
 
   let resultsWithScores: Array<[any, number]> = [];
   if (pdfStore) {
@@ -85,7 +86,7 @@ export const generateRAGResponse = async (
       .slice(0, 3);
   }
 
-  const topResults = rerankVectorResults(updatedQuestion, resultsWithScores as any, { topK: 3 });
+  const topResults = rerankVectorResults(updatedQuestion, resultsWithScores as any, { topK: k });
   console.log("topResults::", topResults)
   const docs = topResults.map(([doc]) => doc);
   const bestScore = topResults[0]?.[1];
@@ -106,6 +107,7 @@ export const generateRAGResponse = async (
   console.log("context::", context)
   const sources = extractSources(docs);
   const ragAnswer = await callRagModel(updatedQuestion, context);
+  console.log("ragAnswer::", JSON.stringify(ragAnswer))
 
   if (shouldFallbackFromRagAnswer(ragAnswer)) {
     const answer = await callFallbackModel(updatedQuestion);

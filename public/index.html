@@ -241,6 +241,16 @@
     .sources strong {
       color: #388e3c;
     }
+    .bubble table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.bubble td,
+.bubble th {
+  padding: 6px 8px;
+  line-height: 1.2;
+}
   </style>
 </head>
 <body>
@@ -298,6 +308,9 @@
         sendMessage();
       }
     }
+        function isHtmlTable(text) {
+  return text.includes("<table") || text.includes("<tr") || text.includes("<td");
+}
 
     function addMessage(role, content, sources = []) {
       if (emptyState) {
@@ -313,8 +326,11 @@
 
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.innerHTML = formatContent(content);
-
+if (isHtmlTable(content)) {
+  bubble.innerHTML = content; // RAW HTML (no formatting)
+} else {
+  bubble.innerHTML = formatContent(content);
+}
       if (sources && sources.length > 0) {
         const sourcesDiv = document.createElement('div');
         sourcesDiv.className = 'sources';
@@ -338,8 +354,9 @@
       // Format bold
       text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       // Format newlines
-      text = text.replace(/\n/g, '<br>');
-      return text;
+text = text.replace(/\n{2,}/g, '\n'); // collapse extra newlines
+text = text.replace(/\n/g, ' ');    
+  return text;
     }
 
     function showTyping() {
@@ -365,6 +382,7 @@
       const typing = document.getElementById('typingIndicator');
       if (typing) typing.remove();
     }
+
 
     async function sendMessage() {
       const text = messageInput.value.trim();
