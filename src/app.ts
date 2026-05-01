@@ -6,6 +6,7 @@ import ingestRoutes from "./routes/ingest.routes";
 import ingestExcelRoutes from "./routes/ingestExcel.routes";
 import chatRoutes from "./routes/chat.routes";
 import { errorMiddleware } from "./middleware/error.middleware";
+import { connectDB } from "./config/db";
 
 const app = express();
 
@@ -20,7 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Serve static chat UI
 app.use(express.static("public"));
-
+connectDB();
 // Health check
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });

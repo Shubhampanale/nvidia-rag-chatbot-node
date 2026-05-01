@@ -3,6 +3,7 @@ dotenv.config();
 
 export const config = {
   port: parseInt(process.env.PORT || "8084", 10),
+  MONGO_URI:process.env.MONGO_URI || "",
   nvidiaApiKey: process.env.NVIDIA_API_KEY || "",
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   aiProvider: (process.env.AI_PROVIDER || "nvidia") as
