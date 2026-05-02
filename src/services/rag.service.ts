@@ -64,8 +64,8 @@ const handleStructured = async (
   console.log("[RAG] routing -> MongoDB + direct answer builder");
 
   const intentResult = await callIntentDetectModel(question);
-  console.log("[RAG] NVIDIA intent result:", typeof intentResult=== "string" ? intentResult : JSON.stringify(intentResult, null, 2));
-  if (intentResult.includes("NOT_STRUCTURED")) {
+  console.log("[RAG] NVIDIA intent result:", typeof intentResult === "string" ? intentResult : JSON.stringify(intentResult, null, 2));
+  if (typeof intentResult === "string" && intentResult.includes("NOT_STRUCTURED")) {
     console.log("[RAG] NOT_STRUCTURED -> fallback to descriptive");
     return handleDescriptive(question);
   }
@@ -101,8 +101,33 @@ const handleStructured = async (
 };
 
 const runLlmMongoQuery = async (intentResult: any): Promise<any[]> => {
-  const { collection, query } = intentResult;
+  let { collection, query } = intentResult;
+
   try {
+    const normalizeQuery = (obj: any): any => {
+      const result: any = {};
+
+      for (const key in obj) {
+        const value = obj[key];
+
+        if (typeof value === "string") {
+          result[key] = { $regex: value, $options: "i" };
+        } else if (Array.isArray(value)) {
+          result[key] = value;
+        } else if (typeof value === "object" && value !== null) {
+          result[key] = normalizeQuery(value);
+        } else {
+          result[key] = value;
+        }
+      }
+
+      return result;
+    };
+
+    query = normalizeQuery(query);
+
+    console.log("[Mongo] Final query:", JSON.stringify(query, null, 2));
+
     if (collection === "college_fee_structures") {
       return await CollegeFeeStructure.find(query).limit(10).lean();
     } else {
