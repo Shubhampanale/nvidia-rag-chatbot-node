@@ -4,6 +4,7 @@ import {
   buildCleanContext,
   callFallbackModel,
   callGreetingsModel,
+  callIntentDetectModel,
   callRagModel,
   extractSources,
   isLowIntentQuery,
@@ -61,7 +62,21 @@ const handleStructured = async (
   parsed: ParsedIntent
 ): Promise<RAGResponse> => {
   console.log("[RAG] routing -> MongoDB + direct answer builder");
-  const mongoResults = await runMongoQuery(parsed);
+
+  const intentResult = await callIntentDetectModel(question);
+  console.log("[RAG] NVIDIA intent result:", typeof intentResult=== "string" ? intentResult : JSON.stringify(intentResult, null, 2));
+  if (intentResult.includes("NOT_STRUCTURED")) {
+    console.log("[RAG] NOT_STRUCTURED -> fallback to descriptive");
+    return handleDescriptive(question);
+  }
+  let mongoResults: any[] = [];
+  if (intentResult && intentResult.intent !== "none" && intentResult.query) {
+    console.log("[RAG] Using NVIDIA generated query");
+    mongoResults = await runLlmMongoQuery(intentResult);
+  } else {
+    console.log("[RAG] Falling back to rule-based MongoQueryBuilder");
+    mongoResults = await runMongoQuery(parsed) as any[];
+  }
 
   if (!mongoResults || mongoResults.length === 0) {
     console.log("[RAG] MongoDB returned 0 results -> fallback model");
@@ -83,6 +98,20 @@ const handleStructured = async (
     mongoResults,
     intent: parsed.intent,
   };
+};
+
+const runLlmMongoQuery = async (intentResult: any): Promise<any[]> => {
+  const { collection, query } = intentResult;
+  try {
+    if (collection === "college_fee_structures") {
+      return await CollegeFeeStructure.find(query).limit(10).lean();
+    } else {
+      return await College.find(query).limit(10).lean();
+    }
+  } catch (err) {
+    console.error("[Mongo] LLM query failed:", err);
+    return [];
+  }
 };
 
 const handleDescriptive = async (
@@ -118,8 +147,6 @@ const handleDescriptive = async (
   }
 
   const context = buildCleanContext(docs);
-  console.log("[RAG] context:", context);
-
   const sources = extractSources(docs);
   const ragAnswer = await callRagModel(question, context);
 

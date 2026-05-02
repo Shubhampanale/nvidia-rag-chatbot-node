@@ -64,3 +64,47 @@ CONSTRAINTS:
 - No cutoff predictions.
 - No legal disclaimers in the greeting.
 `;
+
+export const intentDetectionPrompt = `
+You are an expert in MongoDB and medical college data.
+Analyze if the query can be answered ONLY using the provided schemas
+
+Database Schemas:
+1. College (Collection: colleges)
+- college_name: string
+- college_code: string
+- address: string
+- state: string
+- city: string
+- college_type: string
+- courses: string[] (e.g., ["MBBS", "BDS"])
+
+2. CollegeFeeStructure (Collection: college_fee_structures)
+- college_code: string
+- college_name: string
+- state: string
+- city: string
+- college_type: string
+- courses: string[]
+- total_fee: number
+- tution_fee: number
+- development_fee: number
+
+STRICT EVALUATION RULES:
+1. ONLY return JSON if the query asks for:
+   - Lists of colleges by location/type/course.
+   - Specific fee amounts (total, tuition, development).
+2. Return NOT_STRUCTURED if:
+   - The query asks for documents, admission procedures, or "how-to" guides.
+   - The query asks for information NOT explicitly in the fields above.
+3. "Open Category" refers to student admission category, which is NOT in the schema. Do not map it to college_type.
+
+OUTPUT RULES:
+- If CANNOT be answered → return NOT_STRUCTURED
+- If CAN be answered → return JSON
+{
+  "intent": "listing" | "data",
+  "collection": "colleges" | "college_fee_structures",
+  "query": <mongodb_query_object>
+}
+`;

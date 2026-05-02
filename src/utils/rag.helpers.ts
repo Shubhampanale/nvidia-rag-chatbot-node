@@ -1,6 +1,6 @@
 import { RAGContext } from "../types";
 import { getChatClient, getNvidiaClient } from "./ai.client";
-import { fallbackPrompt, greetingPrompt, SYSTEM_RAG_PROMPT } from "./prompts";
+import { fallbackPrompt, greetingPrompt, intentDetectionPrompt, SYSTEM_RAG_PROMPT } from "./prompts";
 
 export const buildCleanContext = (docs: RAGContext[]): string => {
   return docs
@@ -72,6 +72,26 @@ export const callGreetingsModel = async (question: string) => {
   });
 
   return res.trim();
+};
+
+export const callIntentDetectModel = async (question: string) => {
+  console.log("calling intent detection modal...");
+  const client = getNvidiaClient();
+
+  const res = await client.chat({
+    messages: [{ role: "user", content: question }],
+    systemPrompt: intentDetectionPrompt,
+  });
+  const jsonStr = res.trim().replace(/```json|```/g, "").trim();
+  if (jsonStr === "NOT_STRUCTURED") {
+    return "NOT_STRUCTURED";
+  }
+  try {
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error("[IntentModel] failed to parse JSON:", err);
+    return { intent: "none", collection: null, query: null };
+  }
 };
 
 export const isLowIntentQuery = (query: string): boolean => {
