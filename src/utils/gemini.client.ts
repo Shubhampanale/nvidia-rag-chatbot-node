@@ -12,7 +12,7 @@ export class GeminiClient implements ChatClient {
         apiKey: config.geminiApiKey,
         model: params.model || config.gemini.llmModel,
         temperature: params.temperature ?? config.llm.temperature,
-        maxOutputTokens: params.maxTokens ?? config.llm.maxTokens,
+        maxOutputTokens: config.llm.maxTokens ?? 500,
       });
     }
     return GeminiClient.llmInstance;

@@ -21,12 +21,12 @@ export const config = {
     model: "google/gemma-2-2b-it",
     baseURL: "https://integrate.api.nvidia.com/v1",
     temperature: 0.2,
-    maxTokens: 256,
+    maxTokens: 1000,
   },
 
   // Embeddings — NVIDIA provides this compatible model
   embeddings: {
-    model: "nvidia/nv-embedqa-e5-v5",
+    model: "nvidia/llama-3.2-nemoretriever-300m-embed-v1",
     baseURL: "https://integrate.api.nvidia.com/v1",
   },
 

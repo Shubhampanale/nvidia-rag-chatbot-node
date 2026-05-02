@@ -147,6 +147,7 @@ const handleDescriptive = async (
   }
 
   const context = buildCleanContext(docs);
+  console.log("[RAG] context::", context);
   const sources = extractSources(docs);
   const ragAnswer = await callRagModel(question, context);
 
