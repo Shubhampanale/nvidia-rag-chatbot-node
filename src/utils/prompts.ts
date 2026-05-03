@@ -87,7 +87,7 @@ Database Schemas:
 - address: string
 - state: string
 - city: string
-- college_type: string
+- college_type: string (e.g., ["government", "private", "deemed"])
 - courses: string[] (e.g., ["MBBS", "BDS"])
 
 2. CollegeFeeStructure (Collection: college_fee_structures)
@@ -95,8 +95,8 @@ Database Schemas:
 - college_name: string
 - state: string
 - city: string
-- college_type: string
-- courses: string[]
+- college_type: string (e.g., ["government", "private", "deemed"])
+- courses: string[] (e.g., ["MBBS", "BDS", "BAMS","BHMS","BPT"])
 - total_fee: number
 - tution_fee: number
 - development_fee: number
